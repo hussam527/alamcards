@@ -132,6 +132,17 @@ const hoursText=()=>"من "+fmtH(+CFGV("open",9))+" إلى "+fmtH(+CFGV("close",
 const etaText=()=>CFGV("eta","5 إلى 10 دقائق");
 function isOpen(){const o=+CFGV("open",9),c=+CFGV("close",1),d=new Date(),h=new Date(d.getTime()+(180+d.getTimezoneOffset())*60000).getHours();return o<c?(h>=o&&h<c):(h>=o||h<c)}
 const etaNote=()=>`<div class="note">⏱ التسليم خلال ${esc(etaText())} · أوقات العمل: ${esc(hoursText())}${isOpen()?"":"<br><b>نحن خارج أوقات العمل الآن، وسيُنفَّذ طلبك عند بدء الدوام.</b>"}</div>`;
+/* الدفع برصيد اسياسيل / زين: السعر أعلى بنسبة BAL_FEE (غيّر الرقم لتغيير النسبة) */
+const BAL_FEE=0.15;
+const isBal=n=>/رصيد/.test(n||"");
+const payAmt=(t,pm)=>isBal(pm)?Math.ceil(t*(1+BAL_FEE)/1000)*1000:t;
+const BALM=[{name:"رصيد اسياسيل",number:"07700453034",code:"ASIA"},{name:"رصيد زين العراق",number:"07832219933",code:"ZAIN"}];
+const payList=()=>{const P=(CAT&&CAT.pay||[]).slice();BALM.forEach(b=>{if(!P.some(p=>p.name===b.name))P.push({name:b.name,number:b.number,local:b.code})});return P};
+const balInfo=o=>{const m=/^(ASIA|ZAIN)-(.*)$/.exec(String(o.txn||""));return m?{bal:true,name:BALM.find(b=>b.code===m[1]).name,sender:m[2]}:isBal(o.pay_method)?{bal:true,name:o.pay_method,sender:o.txn}:{bal:false,name:o.pay_method,sender:o.txn}};
+const BAL_NET=n=>String(n).replace("رصيد","").trim();
+function shrink(f){return new Promise((res,rej)=>{const im=new Image(),u=URL.createObjectURL(f);im.onload=()=>{const sc=Math.min(1,1280/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);c.toBlob(b=>b?res(b):rej(new Error("img")),"image/jpeg",.72)};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error("img"))};im.src=u})}
+async function upRcpt(id,blob){const h={apikey:SB_KEY,"Content-Type":"image/jpeg"};if(SB_KEY.indexOf("eyJ")===0)h.Authorization="Bearer "+SB_KEY;const r=await fetch(SB_URL+"/storage/v1/object/receipts/"+encodeURIComponent(id)+".jpg",{method:"POST",headers:h,body:blob});if(!r.ok)throw new Error("up "+r.status)}
+function rcPrev(inp){const f=inp.files&&inp.files[0],o=$("rcp");if(!o)return;if(!f){o.innerHTML="";return}o.innerHTML='<img alt="" style="max-width:100%;max-height:180px;border-radius:10px;border:1px solid var(--ln)">';o.firstChild.src=URL.createObjectURL(f)}
 const WAN=()=>"964"+(((CAT&&CAT.config&&CAT.config.wa)||"07722219933").slice(1));
 
 /* ---------- أدوات الواجهة ---------- */
@@ -171,35 +182,46 @@ function cartV(){
   if(!CAT)return noCat();
   if(!cart.length)return hdr("السلة")+'<div class="empty">السلة فارغة.<br>اختر كارتاً من الرئيسية.</div><button class="btn" onclick="go(\'home\')">تصفح الكارتات</button>';
   return hdr("السلة")+cart.map(l=>{const d=denom(l.d);return `<div class="row"><div><b>${esc(d.brand.name)} ${esc(d.label)}</b><div class="price">${fmt(d.price*l.q)}</div></div><div class="qty"><button aria-label="زيادة" onclick="chg(${l.d},1)">+</button><b>${l.q}</b><button aria-label="إنقاص" onclick="chg(${l.d},-1)">−</button></div></div>`}).join("")+`<div class="row"><b>المجموع</b><span class="price">${fmt(total())}</span></div><button class="btn" onclick="go('checkout')">إتمام الطلب</button>`}
-const payNote=p=>`حوّل المبلغ إلى <b>${esc(p.name)}</b> على الرقم:<div class="code" style="margin:8px 0">${esc(p.number)}</div><button class="btn alt sm" type="button" data-c="${esc(p.number)}" onclick="cp(this.dataset.c)">نسخ الرقم</button><p style="margin-top:8px">ثم اكتب رقم العملية بالأسفل. بعد تأكيد الدفع يظهر لك الكود تلقائياً في صفحة "طلباتي".</p>`;
+const copyBtn=n=>`<button class="btn alt sm" type="button" data-c="${esc(n)}" onclick="cp(this.dataset.c)">نسخ الرقم</button>`;
+const payNote=(p,t)=>isBal(p.name)?`حوّل رصيداً بقيمة <b>${fmt(payAmt(t,p.name))}</b> إلى رقم <b>${esc(BAL_NET(p.name))}</b>:<div class="code" style="margin:8px 0">${esc(p.number)}</div>${copyBtn(p.number)}<p style="margin-top:8px">سعر الدفع بالرصيد أعلى من السعر العادي. بعد التحويل أرفق صورة التحويل بالأسفل، واكتب الرقم الذي أرسلت منه الرصيد. بعد التحقق يظهر لك الكود في صفحة "طلباتي".</p>`:`حوّل المبلغ إلى <b>${esc(p.name)}</b> على الرقم:<div class="code" style="margin:8px 0">${esc(p.number)}</div>${copyBtn(p.number)}<p style="margin-top:8px">ثم اكتب رقم العملية بالأسفل وأرفق صورة الإيصال. بعد تأكيد الدفع يظهر لك الكود تلقائياً في صفحة "طلباتي".</p>`;
 function checkout(){
   if(!CAT)return noCat();if(!cart.length)return cartV();
-  const P=CAT.pay;if(!P.length)return hdr("إتمام الطلب","cart")+'<div class="empty">لا توجد وسائل دفع حالياً. تواصل مع الدعم.</div>';
+  const P=payList();if(!CAT.pay.length)return hdr("إتمام الطلب","cart")+'<div class="empty">لا توجد وسائل دفع حالياً. تواصل مع الدعم.</div>';
   const sel=P.some(p=>p.name===lsGet("pm",""))?lsGet("pm",""):P[0].name,cur=P.find(p=>p.name===sel);
-  return hdr("إتمام الطلب","cart")+etaNote()+`<div class="card"><b>المبلغ المطلوب: <span class="price">${fmt(total())}</span></b></div>
+  return hdr("إتمام الطلب","cart")+etaNote()+`<div class="card"><b>المبلغ المطلوب: <span class="price" id="amt">${fmt(payAmt(total(),sel))}</span></b></div>
 <label for="ct">رقم هاتفك أو بريدك الإلكتروني</label><input id="ct" autocomplete="tel" maxlength="60" placeholder="07xxxxxxxxx" value="${esc(lsGet("ct",""))}">
 <label>طريقة الدفع</label><div style="margin-top:6px">${P.map(p=>`<label class="pay"><input type="radio" name="pm" value="${esc(p.name)}" onchange="pn()" ${p.name===sel?"checked":""}>${esc(p.name)}</label>`).join("")}</div>
-<div class="note" id="pnote">${payNote(cur)}</div>
-<label for="tx">رقم العملية</label><input id="tx" autocomplete="off" maxlength="30" placeholder="رقم العملية من الإيصال">
+<div class="note" id="pnote">${payNote(cur,total())}</div>
+<label for="tx" id="txl">${isBal(sel)?"الرقم الذي أرسلت منه الرصيد":"رقم العملية"}</label><input id="tx" autocomplete="off" maxlength="30" ${isBal(sel)?'inputmode="numeric" placeholder="07xxxxxxxxx"':'placeholder="رقم العملية من الإيصال"'}>
+<label for="rc" id="rcl">${isBal(sel)?"صورة تحويل الرصيد (مطلوبة)":"صورة الإيصال (اختيارية)"}</label><input id="rc" type="file" accept="image/*" onchange="rcPrev(this)"><div id="rcp" style="margin:-4px 0 12px"></div>
 <button class="btn" id="ob" onclick="order()">تأكيد الطلب</button>`}
-function pn(){const v=(document.querySelector('input[name="pm"]:checked')||{}).value,p=CAT.pay.find(x=>x.name===v);if(p)$("pnote").innerHTML=payNote(p)}
+function pn(){const v=(document.querySelector('input[name="pm"]:checked')||{}).value,p=payList().find(x=>x.name===v);if(!p)return;const b=isBal(p.name),tx=$("tx");
+  $("pnote").innerHTML=payNote(p,total());$("amt").textContent=fmt(payAmt(total(),p.name));
+  $("txl").textContent=b?"الرقم الذي أرسلت منه الرصيد":"رقم العملية";tx.placeholder=b?"07xxxxxxxxx":"رقم العملية من الإيصال";tx.inputMode=b?"numeric":"text";
+  $("rcl").textContent=b?"صورة تحويل الرصيد (مطلوبة)":"صورة الإيصال (اختيارية)"}
 async function order(){
   const ct=ar2en($("ct").value.trim()),tx=ar2en($("tx").value.trim()),pm=(document.querySelector('input[name="pm"]:checked')||{}).value;
   if(!/^(07\d{9}|[^\s@]+@[^\s@]+\.[^\s@]{2,})$/.test(ct))return toast("اكتب رقم هاتف صحيح (07xxxxxxxxx) أو بريداً صحيحاً");
-  if(!/^[A-Za-z0-9\-]{4,30}$/.test(tx))return toast("رقم العملية غير صحيح (4 إلى 30 خانة، أرقام وحروف إنجليزية)");
+  const bal=isBal(pm),file=$("rc")&&$("rc").files[0];
+  if(bal){if(!/^07\d{9}$/.test(tx))return toast("اكتب الرقم الذي أرسلت منه الرصيد (07xxxxxxxxx)");if(!file)return toast("أرفق صورة تحويل الرصيد")}
+  else if(!/^[A-Za-z0-9\-]{4,30}$/.test(tx))return toast("رقم العملية غير صحيح (4 إلى 30 خانة، أرقام وحروف إنجليزية)");
+  if(file&&!/^image\//.test(file.type))return toast("الملف المرفق ليس صورة");
   if(!FRESH){toast("جارٍ تحديث الأسعار…");await loadCat();if(!FRESH)return toast("تعذّر تحديث الأسعار، تحقق من الإنترنت");render();return toast("تم تحديث الأسعار، راجع المبلغ ثم أكّد الطلب")}
   if(order.busy)return;order.busy=true;$("ob").disabled=true;
   try{
+    let blob=null;if(file){try{blob=await shrink(file)}catch(e){return toast("تعذّر قراءة الصورة، جرّب صورة أخرى")}}
     const snap=cart.map(l=>{const d=denom(l.d);return{n:d.brand.name+" "+d.label,q:l.q,p:d.price}});
-    const r=await rpc("create_order",{p_items:cart.map(l=>({d:l.d,q:l.q})),p_contact:ct,p_pay:pm,p_txn:tx});
+    const pmo=payList().find(x=>x.name===pm),r=await rpc("create_order",{p_items:cart.map(l=>({d:l.d,q:l.q})),p_contact:ct,p_pay:pmo&&pmo.local?CAT.pay[0].name:pm,p_txn:pmo&&pmo.local?pmo.local+"-"+tx:tx});
     orders.unshift({id:r.id,pin:r.pin,created:Date.now(),items:snap,total:r.total,status:"processing",pm,tx,ct});
-    saveOrders();lsSet("ct",ct);lsSet("pm",pm);cart=[];saveCart();LAST=r.id;go("orders");render()
+    saveOrders();lsSet("ct",ct);lsSet("pm",pm);cart=[];saveCart();LAST=r.id;
+    if(blob){toast("جارٍ رفع الصورة…");try{await upRcpt(r.id,blob)}catch(e){toast("تم الطلب لكن تعذّر رفع الصورة، أرسلها للمتجر عبر واتساب")}}
+    go("orders");render()
   }catch(e){toast(errMsg(e))}finally{order.busy=false;const b=$("ob");if(b)b.disabled=false}}
-const waLink=o=>"https://wa.me/"+WAN()+"?text="+encodeURIComponent("طلب جديد "+o.id+"\n"+o.items.map(x=>"• "+x.n+" ×"+x.q).join("\n")+"\nالمجموع: "+fmt(o.total)+"\nالدفع: "+o.pm+"\nرقم العملية: "+o.tx);
+const waLink=o=>"https://wa.me/"+WAN()+"?text="+encodeURIComponent("طلب جديد "+o.id+"\n"+o.items.map(x=>"• "+x.n+" ×"+x.q).join("\n")+"\nالمجموع: "+fmt(payAmt(o.total,o.pm))+"\nالدفع: "+o.pm+"\n"+(isBal(o.pm)?"أرسلت الرصيد من الرقم: ":"رقم العملية: ")+o.tx);
 function ocard(o){
   const done=o.status==="delivered";
   return `<div class="card"><div style="display:flex;justify-content:space-between"><b>طلب ${esc(o.id)}</b><span class="st ${done?"done":o.status==="cancelled"?"cancel":""}">${ST[o.status]||""}</span></div>
-<p class="mut">${new Date(o.created).toLocaleDateString("en-GB")} · ${esc(o.pm)} · ${fmt(o.total)}</p><p style="margin-top:6px">${o.items.map(x=>esc(x.n)+" ×"+x.q).join("، ")}</p>
+<p class="mut">${new Date(o.created).toLocaleDateString("en-GB")} · ${esc(o.pm)} · ${fmt(payAmt(o.total,o.pm))}</p><p style="margin-top:6px">${o.items.map(x=>esc(x.n)+" ×"+x.q).join("، ")}</p>
 ${o.status!=="cancelled"?`<div class="steps"><i class="on"></i><i class="${done?"on":""}"></i></div>`:""}
 ${o.status==="processing"?`<p class="mut">جارٍ التحقق من الدفع. التسليم عادةً خلال ${esc(etaText())}، وسيظهر الكود هنا تلقائياً.</p>`:""}
 ${done&&o.codes?o.codes.map(c=>`<p class="mut">${esc(c.n)}:</p><div class="code">${esc(c.code)}</div><button class="btn alt sm" style="margin-top:6px" data-c="${esc(c.code)}" onclick="cp(this.dataset.c)">نسخ الكود</button>`).join(""):""}</div>`}
@@ -245,7 +267,7 @@ async function adminLoad(){
   try{
     const [ok]=await Promise.all([rpc("is_admin",{},true),loadAdminData()]);
     if(!ok){$("app").innerHTML=hdr("لوحة الإدارة","home")+'<div class="empty">هذا الحساب ليس مديراً للمتجر.</div><button class="btn alt" onclick="logout()">تسجيل الخروج</button>';return}
-    renderAdmin();startAdminPoll();
+    await ensureBalPay();renderAdmin();startAdminPoll();
     try{if("Notification" in window&&Notification.permission==="default")Notification.requestPermission()}catch(e){}
   }catch(e){if(e.status===401||e.status===403){logout();return}const el=$("adm");if(el)el.innerHTML='<div class="empty">تعذّر تحميل البيانات: '+esc(admErr(e))+'</div>'}}
 async function loadAdminData(){
@@ -275,10 +297,10 @@ function admOrders(){
   return `<div class="chips"><button class="chip ${OF==="proc"?"on":""}" onclick="OF='proc';renderAdmin()">قيد المعالجة</button><button class="chip ${OF==="all"?"on":""}" onclick="OF='all';renderAdmin()">كل الطلبات</button></div>`+(list.length?list.map(aoCard).join(""):'<div class="empty">لا توجد طلبات.</div>')}
 function aoCard(o){
   const phone=/^07\d{9}$/.test(o.contact),link=phone?`<a href="https://wa.me/964${o.contact.slice(1)}" target="_blank" rel="noopener noreferrer">${esc(o.contact)}</a>`:esc(o.contact);
-  const dup=AD.orders.filter(x=>x.id!==o.id&&String(x.txn).toLowerCase()===String(o.txn).toLowerCase()).map(x=>x.id);
+  const dup=AD.orders.filter(x=>x.id!==o.id&&!balInfo(x).bal&&String(x.txn).toLowerCase()===String(o.txn).toLowerCase()).map(x=>x.id);
   return `<div class="card"><div style="display:flex;justify-content:space-between"><b>${esc(o.id)}</b><span class="st ${o.status==="delivered"?"done":o.status==="cancelled"?"cancel":""}">${ST[o.status]||""}</span></div>
-<p class="mut">${esc(new Date(o.created_at).toLocaleString("en-GB"))}</p><p>${o.items.map(x=>esc(x.n)+" ×"+x.q).join("، ")}</p><p class="price">${fmt(o.total)}</p>
-<div class="note">الزبون: ${link}<br>الدفع: ${esc(o.pay_method)}<br>رقم العملية: <b dir="ltr">${esc(o.txn)}</b>${dup.length?`<br><b style="color:var(--bad)">⚠️ رقم العملية مكرر مع الطلب: ${esc(dup.join("، "))}</b>`:""}</div>
+<p class="mut">${esc(new Date(o.created_at).toLocaleString("en-GB"))}</p><p>${o.items.map(x=>esc(x.n)+" ×"+x.q).join("، ")}</p><p class="price">${fmt(balInfo(o).bal?payAmt(o.total,"رصيد"):o.total)}${balInfo(o).bal?` <span class="mut">(السعر الأساسي ${fmt(o.total)})</span>`:""}</p>
+<div class="note">الزبون: ${link}<br>الدفع: ${esc(balInfo(o).name)}<br>${balInfo(o).bal?"أُرسل الرصيد من الرقم":"رقم العملية"}: <b dir="ltr">${esc(balInfo(o).sender)}</b><br><button class="btn alt sm" style="margin-top:6px" onclick="viewReceipt('${esc(o.id)}')">🖼 عرض صورة الإيصال</button>${dup.length&&!balInfo(o).bal?`<br><b style="color:var(--bad)">⚠️ رقم العملية مكرر مع الطلب: ${esc(dup.join("، "))}</b>`:""}</div>
 ${o.status==="processing"?`<button class="btn" onclick="confirmOrder('${esc(o.id)}')">تأكيد الدفع وتسليم الكود</button>${NEEDMAN[o.id]?`<p class="mut" style="margin:8px 0">لا يوجد مخزون كافٍ. اكتب الأكواد (كود بكل سطر):</p><textarea id="mn-${esc(o.id)}" rows="3" dir="ltr"></textarea><button class="btn" onclick="manualDeliver('${esc(o.id)}')">تسليم بكود يدوي</button>`:""}<button class="btn alt" style="margin-top:8px" onclick="cancelOrder('${esc(o.id)}')">رفض الطلب</button>`:""}
 ${o.status==="delivered"&&o.delivered?`<p class="mut">الأكواد المُسلّمة: ${o.delivered.map(c=>esc(c.code)).join("، ")}</p>`:""}</div>`}
 async function confirmOrder(id){
@@ -298,7 +320,7 @@ async function addCodes(){
   const d=+$("st-d").value,lines=[...new Set($("st-c").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean))];if(!lines.length)return toast("اكتب الأكواد");
   try{await api("/rest/v1/codes?on_conflict=denom_id,code",{method:"POST",body:lines.map(code=>({denom_id:d,code})),headers:{Prefer:"resolution=ignore-duplicates,return=minimal"},admin:true});toast("تمت الإضافة ("+lines.length+")");await reloadAdmin()}catch(e){toast(admErr(e))}}
 function admPrices(){
-  return AD.brands.map(b=>`<div class="card"><label class="sr"><input type="checkbox" id="pb-${esc(b.id)}" ${b.active?"checked":""}><b>${esc(b.name)}</b><span class="mut">(ظاهر بالمتجر)</span></label><input id="bn-${esc(b.id)}" placeholder="ملاحظة تظهر للزبون (اختياري)" maxlength="120" value="${esc(b.note||"")}" style="margin:0 0 10px">${AD.denoms.filter(d=>d.brand_id===b.id).map(d=>`<div class="sr"><span style="flex:1">${esc(d.label)}</span><input type="number" inputmode="numeric" min="1" id="pp-${d.id}" value="${d.price}" style="width:110px"><label class="mut"><input type="checkbox" id="pa-${d.id}" ${d.available?"checked":""}>متوفر</label></div>`).join("")}<div class="sr"><input id="nl-${esc(b.id)}" placeholder="فئة جديدة" maxlength="40"><input type="number" inputmode="numeric" id="np-${esc(b.id)}" placeholder="السعر" style="width:100px"><button class="btn sm" onclick="addDenom('${esc(b.id)}')">إضافة</button></div></div>`).join("")+`<button class="btn" onclick="savePrices()">حفظ الأسعار</button>`}
+  return AD.brands.map(b=>`<div class="card"><label class="sr"><input type="checkbox" id="pb-${esc(b.id)}" ${b.active?"checked":""}><b>${esc(b.name)}</b><span class="mut">(ظاهر بالمتجر)</span></label><input id="bn-${esc(b.id)}" placeholder="ملاحظة تظهر للزبون (اختياري)" maxlength="120" value="${esc(b.note||"")}" style="margin:0 0 10px">${AD.denoms.filter(d=>d.brand_id===b.id).map(d=>`<div class="sr" style="flex-wrap:wrap"><span style="flex:1;min-width:90px">${esc(d.label)}</span><input type="number" inputmode="numeric" min="1" id="pp-${d.id}" value="${d.price}" style="width:110px"><label class="mut"><input type="checkbox" id="pa-${d.id}" ${d.available?"checked":""}>متوفر</label><button class="btn alt sm" onclick="editDenom(${d.id})">✏️ تعديل</button><button class="btn alt sm" style="color:var(--bad);border-color:var(--bad)" onclick="delDenom(${d.id})">حذف</button></div>`).join("")}<div class="sr"><input id="nl-${esc(b.id)}" placeholder="فئة جديدة" maxlength="40"><input type="number" inputmode="numeric" id="np-${esc(b.id)}" placeholder="السعر" style="width:100px"><button class="btn sm" onclick="addDenom('${esc(b.id)}')">إضافة</button></div></div>`).join("")+`<button class="btn" onclick="savePrices()">حفظ الأسعار</button>`}
 async function savePrices(){
   const jobs=[],P={Prefer:"return=minimal"};
   for(const b of AD.brands){const v=$("pb-"+b.id).checked,nt=$("bn-"+b.id).value.trim();if(v!==b.active||nt!==(b.note||""))jobs.push(api("/rest/v1/brands?id=eq."+encodeURIComponent(b.id),{method:"PATCH",body:{active:v,note:nt},headers:P,admin:true}))}
@@ -307,6 +329,28 @@ async function savePrices(){
     if(p!==d.price||a!==d.available)jobs.push(api("/rest/v1/denoms?id=eq."+d.id,{method:"PATCH",body:{price:p,available:a},headers:P,admin:true}))}
   if(!jobs.length)return toast("لا توجد تغييرات");
   try{await Promise.all(jobs);toast("تم الحفظ ✅ يظهر للزبائن فوراً");await reloadAdmin()}catch(e){toast(admErr(e))}}
+async function editDenom(id){
+  const d=AD.denoms.find(x=>x.id===id);if(!d)return;
+  const l=prompt("اسم الفئة:",d.label);if(l===null)return;
+  const pr=prompt("السعر (د.ع):",d.price);if(pr===null)return;
+  const nl=l.trim(),np=parseInt(ar2en(pr),10);
+  if(!nl||!(np>0&&np<=100000000))return toast("اسم الفئة أو السعر غير صحيح");
+  try{await api("/rest/v1/denoms?id=eq."+id,{method:"PATCH",body:{label:nl,price:np},headers:{Prefer:"return=minimal"},admin:true});toast("تم تعديل الفئة ✅");await reloadAdmin()}catch(e){toast(admErr(e))}}
+async function delDenom(id){
+  const d=AD.denoms.find(x=>x.id===id);if(!d||!confirm("حذف الفئة «"+d.label+"» نهائياً؟"))return;
+  try{await api("/rest/v1/denoms?id=eq."+id,{method:"DELETE",headers:{Prefer:"return=minimal"},admin:true});toast("تم حذف الفئة");await reloadAdmin()}
+  catch(e){toast("تعذّر الحذف (مرتبطة بأكواد أو طلبات). الأفضل إلغاء علامة «متوفر» بدل الحذف")}}
+async function viewReceipt(id){
+  try{const r=await fetch(SB_URL+"/storage/v1/object/authenticated/receipts/"+encodeURIComponent(id)+".jpg",{headers:{apikey:SB_KEY,Authorization:"Bearer "+SESSION.access_token}});
+    if(!r.ok)return toast("لا توجد صورة لهذا الطلب");
+    const u=URL.createObjectURL(await r.blob()),d=document.createElement("div");
+    d.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99;display:flex;align-items:center;justify-content:center;padding:12px";
+    d.innerHTML='<img alt="" style="max-width:100%;max-height:100%;border-radius:10px">';d.firstChild.src=u;d.onclick=()=>{d.remove();URL.revokeObjectURL(u)};document.body.appendChild(d)}
+  catch(e){toast("تعذّر عرض الصورة")}}
+async function ensureBalPay(){
+  if(lsGet("balpay1",false))return;
+  const want=[["رصيد اسياسيل","07700453034"],["رصيد زين العراق","07832219933"]],miss=want.filter(w=>!AD.pay.some(p=>p.name===w[0]));
+  try{if(miss.length){await Promise.all(miss.map((w,i)=>api("/rest/v1/pay_methods",{method:"POST",body:{name:w[0],number:w[1],sort:AD.pay.length+i},headers:{Prefer:"return=minimal"},admin:true})));toast("أُضيف الدفع برصيد اسياسيل وزين العراق ✅");await loadAdminData()}lsSet("balpay1",true)}catch(e){}}
 async function addDenom(bid){
   const l=$("nl-"+bid).value.trim(),p=parseInt(ar2en($("np-"+bid).value),10);if(!l||!(p>0))return toast("اكتب اسم الفئة وسعرها");
   const sort=AD.denoms.filter(d=>d.brand_id===bid).reduce((m,d)=>Math.max(m,d.sort),-1)+1;
