@@ -338,8 +338,11 @@ const payAmt=(t,pm)=>isBal(pm)?Math.ceil(t*(1+BAL_FEE)/1000)*1000:t;
 const BALM=[{name:"رصيد اسياسيل",number:"07700453034",code:"ASIA"},{name:"رصيد زين العراق",number:"07832219933",code:"ZAIN"}];
 const payList=()=>(CAT&&CAT.pay||[]).slice();
 /* آيدي اللاعب (انتقام السلاطين) يُحفظ بنهاية رقم العملية بصيغة -ID123456 */
-const GID_BRAND="sultans";
-const needsGid=()=>cart.some(l=>{const d=denom(l.d);return d&&d.brand.id===GID_BRAND});
+const GID_BRANDS=["sultans","ff"];
+const needsGid=()=>cart.some(l=>{const d=denom(l.d);return d&&GID_BRANDS.includes(d.brand.id)});
+const GID_OPTIONAL=["ff"];
+const reqGid=()=>cart.some(l=>{const d=denom(l.d);return d&&GID_BRANDS.includes(d.brand.id)&&!GID_OPTIONAL.includes(d.brand.id)});
+const gidGames=()=>{const n=[];cart.forEach(l=>{const d=denom(l.d);if(d&&GID_BRANDS.includes(d.brand.id)&&!n.includes(d.brand.name))n.push(d.brand.name)});return n.join(" و ")};
 const splitTxn=t=>{const m=/^(.*?)-ID(\d{5,15})$/.exec(String(t||""));return m?{t:m[1],g:m[2]}:{t:String(t||""),g:""}};
 const balInfo=o=>{const s=splitTxn(o.txn),m=/^(ASIA|ZAIN)-(\d+)(?:-\w+)?$/.exec(s.t);return m?{bal:true,name:BALM.find(b=>b.code===m[1]).name,sender:m[2],gid:s.g}:isBal(o.pay_method)?{bal:true,name:o.pay_method,sender:s.t,gid:s.g}:{bal:false,name:o.pay_method,sender:s.t,gid:s.g}};
 const BAL_NET=n=>String(n).replace("رصيد","").trim();
@@ -403,7 +406,7 @@ function checkout(){
   const sel=P.some(p=>p.name===lsGet("pm",""))?lsGet("pm",""):P[0].name,cur=P.find(p=>p.name===sel);
   return hdr("إتمام الطلب","cart")+etaNote()+`<div class="card"><b>المبلغ المطلوب: <span class="price" id="amt">${fmt(payAmt(total(),sel))}</span></b></div>
 <label for="ct">رقم هاتفك أو بريدك الإلكتروني</label><input id="ct" autocomplete="tel" maxlength="60" placeholder="07xxxxxxxxx" value="${esc(lsGet("ct",""))}">
-${needsGid()?`<div class="card" style="border-color:var(--acc)"><label for="gid">🎮 آيدي حسابك في لعبة انتقام السلاطين (Player ID)</label><input id="gid" dir="ltr" inputmode="numeric" autocomplete="off" maxlength="15" placeholder="مثال: 12345678" value="${esc(lsGet("gid",""))}" style="margin-bottom:8px"><p class="mut">لعبة انتقام السلاطين تُشحن عن طريق الآيدي. انسخه من داخل اللعبة وتأكد منه جيداً، فلا يمكن استرجاع الشحن إذا كُتب آيدي خاطئ.</p></div>`:""}
+${needsGid()?`<div class="card" style="border-color:var(--acc)"><label for="gid">🎮 آيدي حسابك في لعبة ${esc(gidGames())} (Player ID)${reqGid()?"":" — اختياري"}</label><input id="gid" dir="ltr" inputmode="numeric" autocomplete="off" maxlength="15" placeholder="${reqGid()?"":"اختياري — "}مثال: 12345678" value="${esc(lsGet("gid",""))}" style="margin-bottom:8px"><p class="mut">${reqGid()?`لعبة ${esc(gidGames())} تُشحن عن طريق الآيدي. انسخه من داخل اللعبة وتأكد منه جيداً، فلا يمكن استرجاع الشحن إذا كُتب آيدي خاطئ.`:`إذا كتبت الآيدي يُشحن حسابك في اللعبة مباشرة، وإذا تركته فارغاً يصلك كود البطاقة فقط بدون شحن الحساب. تأكد من الآيدي جيداً، فلا يمكن استرجاع الشحن إذا كُتب خطأ.`}</p></div>`:""}
 <label>طريقة الدفع</label><div style="margin-top:6px">${P.map(p=>`<label class="pay"><input type="radio" name="pm" value="${esc(p.name)}" onchange="pn()" ${p.name===sel?"checked":""}>${esc(p.name)}</label>`).join("")}</div>
 <div class="note" id="pnote">${payNote(cur,total())}</div>
 <label for="tx" id="txl">${isBal(sel)?"الرقم الذي أرسلت منه الرصيد":"رقم العملية"}</label><input id="tx" autocomplete="off" maxlength="30" ${isBal(sel)?'inputmode="numeric" placeholder="07xxxxxxxxx"':'placeholder="رقم العملية من الإيصال"'}>
@@ -417,7 +420,7 @@ async function order(){
   const ct=ar2en($("ct").value.trim()),tx=ar2en($("tx").value.trim()),pm=(document.querySelector('input[name="pm"]:checked')||{}).value;
   if(!/^(07\d{9}|[^\s@]+@[^\s@]+\.[^\s@]{2,})$/.test(ct))return toast("اكتب رقم هاتف صحيح (07xxxxxxxxx) أو بريداً صحيحاً");
   const gid=needsGid()?ar2en(($("gid")||{value:""}).value).replace(/\s/g,""):"";
-  if(needsGid()&&!/^\d{5,15}$/.test(gid))return toast("اكتب آيدي اللعبة بشكل صحيح (أرقام فقط)");
+  if(needsGid()&&(gid?!/^\d{5,15}$/.test(gid):reqGid()))return toast("اكتب آيدي اللعبة بشكل صحيح (أرقام فقط)");
   const bal=isBal(pm),file=$("rc")&&$("rc").files[0];
   if(bal){if(!/^07\d{9}$/.test(tx))return toast("اكتب الرقم الذي أرسلت منه الرصيد (07xxxxxxxxx)");if(!file)return toast("أرفق صورة تحويل الرصيد")}
   else if(!/^[A-Za-z0-9\-]{4,30}$/.test(tx))return toast("رقم العملية غير صحيح (4 إلى 30 خانة، أرقام وحروف إنجليزية)");
