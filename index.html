@@ -254,6 +254,11 @@ h1,.brand-lockup h1{letter-spacing:0}
 }
 .an,.as{display:block}
 .btn:disabled{opacity:.6;cursor:wait;filter:none}
+
+.ldot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2ecc71;margin-inline-end:7px;vertical-align:middle;position:relative;top:-1px;animation:ldp 1.8s ease-out infinite}
+.ldot.off{background:var(--mut);animation:none}
+@keyframes ldp{0%{box-shadow:0 0 0 0 rgba(46,204,113,.65)}70%{box-shadow:0 0 0 8px rgba(46,204,113,0)}100%{box-shadow:0 0 0 0 rgba(46,204,113,0)}}
+@media (prefers-reduced-motion:reduce){.ldot{animation:none}}
 </style>
 </head>
 <body>
@@ -330,7 +335,7 @@ const fmtH=h=>h===0?"12 منتصف الليل":h<5?h+" ليلاً":h<12?h+" صب
 const hoursText=()=>"من "+fmtH(+CFGV("open",9))+" إلى "+fmtH(+CFGV("close",1));
 const etaText=()=>CFGV("eta","5 إلى 10 دقائق");
 function isOpen(){const o=+CFGV("open",9),c=+CFGV("close",1),d=new Date(),h=new Date(d.getTime()+(180+d.getTimezoneOffset())*60000).getHours();return o<c?(h>=o&&h<c):(h>=o||h<c)}
-const etaNote=()=>`<div class="note">⏱ التسليم خلال ${esc(etaText())} · أوقات العمل: ${esc(hoursText())}${isOpen()?"":"<br><b>نحن خارج أوقات العمل الآن، وسيُنفَّذ طلبك عند بدء الدوام.</b>"}</div>`;
+const etaNote=()=>`<div class="note">${isOpen()?`<span class="ldot"></span><b>متاح الآن</b>`:`<span class="ldot off"></span><b>خارج أوقات العمل الآن</b>`}<div class="mut" style="font-size:13px;margin-top:3px">أوقات العمل ${esc(hoursText())}</div>${isOpen()?"":`<div class="mut" style="font-size:13px">سيُنفَّذ طلبك عند بدء الدوام.</div>`}</div>`;
 /* الدفع برصيد اسياسيل / زين: السعر أعلى بنسبة BAL_FEE (غيّر الرقم لتغيير النسبة) */
 const BAL_FEE=0.15;
 const isBal=n=>/رصيد/.test(n||"");
@@ -445,7 +450,7 @@ function ocard(o){
 <p class="mut">${new Date(o.created).toLocaleDateString("en-GB")} · ${esc(o.pm)} · ${fmt(payAmt(o.total,o.pm))}</p>${o.pin?`<p class="mut" style="margin-top:4px">رمز التتبع: <b dir="ltr">${esc(fmtPin(o.pin))}</b> <button class="btn alt sm" style="padding:2px 10px" data-c="${esc(o.id+" "+fmtPin(o.pin))}" onclick="cp(this.dataset.c)">نسخ</button></p>`:""}<p style="margin-top:6px">${o.items.map(x=>esc(x.n)+" ×"+x.q).join("، ")}</p>
 ${o.gid?`<p class="mut" style="margin-top:6px">آيدي اللعبة: <b dir="ltr">${esc(o.gid)}</b></p>`:""}${o.gid&&o.gsent===false&&o.status==="processing"?`<a class="btn alt sm" style="margin-top:6px;text-decoration:none" href="${waLink(o)}" target="_blank" rel="noopener noreferrer">أرسل الآيدي للمتجر عبر واتساب</a>`:""}
 ${o.status!=="cancelled"?`<div class="steps"><i class="on"></i><i class="${done?"on":""}"></i></div>`:""}
-${o.status==="processing"?`<p class="mut">جارٍ التحقق من الدفع. التسليم عادةً خلال ${esc(etaText())}، وسيظهر الكود هنا تلقائياً.</p>`:""}
+${o.status==="processing"?`<p class="mut">جارٍ التحقق من الدفع. التسليم عادةً خلال ${esc(etaText())}، وسيظهر الكود هنا تلقائياً.<br>إذا تأخر تسليم الكود أكثر من ساعة أبلغ المتجر عبر <a href="https://wa.me/9647700453034?text=${encodeURIComponent("السلام عليكم، طلبي رقم "+o.id+" تأخر تسليم الكود")}" target="_blank" rel="noopener noreferrer" style="color:var(--pri);font-weight:700;text-decoration:underline">واتساب</a> أو اتصل على <a href="tel:07700453034" dir="ltr" style="color:var(--pri);font-weight:700;text-decoration:underline">07700453034</a></p>`:""}
 ${done&&o.codes?o.codes.map(c=>`<p class="mut">${esc(c.n)}:</p><div class="code">${esc(c.code)}</div><button class="btn alt sm" style="margin-top:6px" data-c="${esc(c.code)}" onclick="cp(this.dataset.c)">نسخ الكود</button>`).join(""):""}</div>`}
 const olist=()=>orders.length?orders.map(ocard).join(""):'<div class="empty">لا توجد طلبات بعد.</div>';
 function ordersV(){
@@ -474,7 +479,7 @@ async function track(){
     out.innerHTML='<p style="margin-top:8px"><span class="st '+(r.status==="delivered"?"done":r.status==="cancelled"?"cancel":"")+'">'+(ST[r.status]||"")+'</span></p>'+(r.codes?r.codes.map(c=>'<div class="code">'+esc(c.code)+'</div>').join(""):"")}
   catch(e){out.innerHTML='<p class="mut" style="margin-top:8px">'+(/not_found/.test(e.message)?"رقم الطلب أو رمز التحقق غير صحيح.":"تعذّر الاتصال، حاول مرة أخرى.")+'</p>'}}
 function support(){
-  return hdr("الدعم")+`<div class="card"><b>تواصل معنا عبر واتساب</b><p class="mut">اضغط على الرقم لفتح واتساب:</p>${SUP().map(n=>`<a class="btn" style="margin-top:10px;text-decoration:none" href="https://wa.me/964${esc(n.slice(1))}" target="_blank" rel="noopener noreferrer">واتساب ${esc(n.slice(0,4))} ${esc(n.slice(4,7))} ${esc(n.slice(7))}</a>`).join("")}</div>
+  return hdr("الدعم")+`<div class="card"><b>تواصل معنا عبر واتساب</b><p class="mut">اضغط على الرقم لفتح واتساب:</p>${SUP().map(n=>`<a class="btn" style="margin-top:10px;text-decoration:none" href="https://wa.me/964${esc(n.slice(1))}" target="_blank" rel="noopener noreferrer">واتساب <bdi dir="ltr">${esc(n.slice(0,4))} ${esc(n.slice(4,7))} ${esc(n.slice(7))}</bdi></a>`).join("")}</div>
 <div class="card"><b>الشروط</b><p class="mut">لا يُسلَّم الكود قبل التحقق من الدفع. كل كود يُباع مرة واحدة فقط. الكارتات الرقمية لا تُسترجع بعد التسليم.</p></div>
 <button class="btn alt" onclick="go('terms')">الشروط والخصوصية</button><p class="mut" style="text-align:center;margin-top:20px"><a href="#admin" style="color:inherit">دخول الإدارة</a></p>`}
 function terms(){return hdr("الشروط والخصوصية","support")+`<div class="card"><b>شروط الشراء</b><p class="mut" style="margin-top:6px">1. الكارتات رقمية، ويُسلَّم الكود بعد التحقق من وصول الدفع.<br>2. يتم التسليم بأسرع وقت ممكن بعد التحقق.<br>3. تأكد من اختيار الكارت والفئة الصحيحين ومن توافقهما مع حسابك قبل الشراء.<br>4. لا تُستردّ الكارتات بعد التسليم، إلا إذا تبيّن أن الكود غير صالح، ويتم ذلك بالتواصل مع الدعم.<br>5. حوّل المبلغ إلى الأرقام المعروضة في صفحة إتمام الطلب فقط، ولا نتحمّل أي تحويل لأرقام أخرى.<br>6. الأسعار قابلة للتغيير، والسعر المعتمد هو سعر وقت تأكيد الطلب.</p></div><div class="card"><b>الخصوصية</b><p class="mut" style="margin-top:6px">1. نحفظ رقم هاتفك أو بريدك ورقم العملية وتفاصيل الطلب لإتمام طلبك فقط.<br>2. لا نطلب منك أبداً كلمة مرور حسابك أو رمز التحقق الخاص بحسابك.<br>3. لا نشارك بياناتك مع أي جهة خارجية.</p></div>`}
